@@ -1,0 +1,12 @@
+
+target/
+data/
+.git/
+.github/
+.vscode/
+.idea/
+oracleJdk-27/
+*.log
+*.mv.db
+*.trace.db
+.env

@@ -1,0 +1,430 @@
+ORCAFACIL - GUIA DO SISTEMA E DO CODIGO
+========================================
+
+Este documento explica o que o sistema faz, o que cada acao altera e onde ficam
+as principais partes do codigo. Foi escrito para a versao atual do projeto.
+
+
+1. RESUMO DO SISTEMA
+--------------------
+
+O OrcaFacil e uma aplicacao web para cadastrar clientes, criar orcamentos de
+servicos, acompanhar a decisao do cliente e controlar a producao de cada item.
+
+O navegador exibe a interface. O servidor Java/Spring Boot valida e processa as
+operacoes. Nos perfis padrao e lan, os dados ficam em um banco H2 em arquivo no servidor.
+O perfil cloud usa H2 em memoria e perde os dados ao encerrar o processo.
+Assim, outros computadores da mesma rede podem acessar o sistema pelo navegador,
+mas os dados continuam armazenados no computador que executa o servidor.
+
+O sistema nao tem login ou separacao de usuarios. Use-o somente em uma rede
+confiavel e com dados apropriados para esse ambiente.
+
+
+2. FUNCOES DA INTERFACE E O QUE CADA UMA ALTERA
+-----------------------------------------------
+
+ABA CLIENTES
+
+Cadastro de cliente
+- O nome da empresa ou do cliente e obrigatorio.
+- Responsavel, CNPJ, endereco e e-mail sao opcionais.
+- O CNPJ deve ter 14 digitos, com ou sem pontuacao. A validacao confere o
+  formato, nao os digitos verificadores oficiais do CNPJ.
+- Ao salvar, o cliente e gravado no banco. Ele passa a aparecer na lista e na
+  selecao de clientes usada ao criar orcamentos.
+- Se houver responsavel, a interface apresenta "Responsavel - Empresa".
+
+Edicao de cliente
+- Altera os dados do cadastro existente, sem criar um segundo cliente.
+- Os orcamentos relacionados usam o nome atual do cadastro do cliente. Portanto,
+  mudar o nome da empresa ou do responsavel tambem muda como o cliente aparece
+  nos orcamentos associados.
+
+Exportar Excel
+- Baixa um arquivo clientes.xlsx com identificador, responsavel/empresa, CNPJ,
+  endereco e e-mail.
+- A exportacao somente le os dados; nao altera o cadastro.
+
+
+ABA ORCAMENTOS
+
+Criar orcamento
+- E necessario escolher um cliente, informar titulo, validade e pelo menos um
+  item.
+- Pode-se adicionar ate 50 itens. Cada item tem descricao, quantidade, preco
+  unitario e imagem opcional.
+- A descricao geral do orcamento e opcional.
+- A quantidade pode ser fracionada, maior que zero e limitada a 10.000.
+- O preco unitario pode ser zero ou maior, limitado a R$ 1.000.000,00.
+- O desconto e um valor em reais e nao pode exceder o subtotal.
+- Cada linha e arredondada para centavos; o servidor calcula subtotal e total.
+- A imagem pode ser PNG, JPEG ou WebP, com no maximo 500 KB. Ela fica guardada
+  junto ao item no banco.
+- Ao salvar, um novo orcamento e criado no estado RASCUNHO.
+
+Editar rascunho
+- A opcao Editar permite alterar cliente, titulo, descricao, validade, desconto
+  e itens de um orcamento que ainda esta em RASCUNHO.
+- Salvar substitui os itens anteriores pelos informados na edicao e aumenta a
+  versao do orcamento.
+- A versao evita que uma tela antiga sobrescreva alteracoes mais recentes.
+- Orcamentos que ja foram enviados ou tiveram outra transicao nao podem ter seu
+  conteudo editado pela interface.
+
+Buscar orcamento
+- Filtra a lista pelo titulo ou pelo nome do cliente.
+- A busca nao modifica os dados. O seletor de todos marca somente os resultados
+  que estao visiveis com a busca atual.
+
+Selecionar varios orcamentos
+- As caixas ao lado dos orcamentos permitem escolher mais de um registro.
+- As acoes em lote aparecem somente quando a mesma transicao e valida para todos
+  os selecionados:
+    RASCUNHO: marcar enviado ou cancelar.
+    ENVIADO: aprovar, rejeitar ou cancelar.
+- Antes da operacao, o sistema pede confirmacao.
+- O servidor verifica todos os registros e suas versoes antes de atualizar.
+  Se algum estiver desatualizado ou nao permitir a transicao, nenhum dos
+  selecionados e alterado.
+- O limite e de 100 orcamentos por operacao.
+
+Opcoes individuais do orcamento
+- Abrir detalhes: mostra o cliente, validade, descricao, itens, imagens, totais
+  e situacao. Tambem apresenta as acoes compativeis com aquela situacao.
+- Imprimir / Salvar PDF: abre a janela de impressao do navegador. A opcao de
+  salvar como PDF depende do navegador e do sistema operacional.
+- RASCUNHO: permite editar, marcar enviado ou cancelar.
+- ENVIADO: permite aprovar, rejeitar ou cancelar.
+- APROVADO, REJEITADO ou CANCELADO: permite consultar e imprimir; o conteudo nao
+  pode ser editado.
+- Marcar enviado registra a situacao, mas nao envia e-mail ou mensagem.
+- A validade e informativa e nao altera automaticamente a situacao.
+
+Exportar Excel
+- Baixa orcamentos.xlsx com uma planilha de resumo dos orcamentos e outra com
+  todos os itens.
+- Imagens PNG e JPEG sao incorporadas ao arquivo. Imagens WebP sao mantidas
+  como dados Base64 divididos em partes na aba "Imagens WebP (base64)".
+- A exportacao somente le os dados; nao muda situacoes nem registros.
+
+
+ABA PRODUCAO
+
+Em producao
+- Lista os itens com situacao EM_PRODUCAO pertencentes a orcamentos aprovados.
+- "Marcar concluido" muda aquele item para CONCLUIDO.
+- A acao incrementa a versao do orcamento. O estado atualizado tambem aparece
+  nos detalhes do orcamento e na lista de finalizados.
+
+Finalizados
+- Lista os itens com situacao CONCLUIDO pertencentes a orcamentos aprovados.
+- "Reabrir producao" devolve o item para EM_PRODUCAO.
+- Os itens PENDENTE ainda nao aparecem nessas duas listas. Para iniciar um item,
+  abra um orcamento aprovado e use a opcao "Iniciar producao" no item.
+
+Abrir orcamento
+- O nome do orcamento na tabela abre os detalhes da proposta correspondente.
+
+Exportar Excel
+- Baixa producao.xlsx com os itens em producao e concluidos, incluindo dados do
+  orcamento, cliente, quantidade, preco, subtotal, situacao e imagem.
+
+
+SITUACOES
+
+Situacao do orcamento:
+- RASCUNHO -> ENVIADO ou CANCELADO.
+- ENVIADO -> APROVADO, REJEITADO ou CANCELADO.
+- APROVADO, REJEITADO e CANCELADO sao estados finais do fluxo do orcamento.
+
+Situacao do item de um orcamento aprovado:
+- PENDENTE -> EM_PRODUCAO.
+- EM_PRODUCAO -> CONCLUIDO.
+- CONCLUIDO -> EM_PRODUCAO, se for necessario reabrir.
+
+Situacao do item e situacao do orcamento sao controles diferentes: um orcamento
+aprovado pode ter varios itens, cada qual com seu proprio andamento.
+
+
+3. PASTAS E ARQUIVOS DO PROJETO
+-------------------------------
+
+RAIZ DO PROJETO
+
+pom.xml
+- Configuracao Maven: nome/versao do projeto, Java 17, Spring Boot e dependencias.
+- Inclui Spring MVC para a API e paginas web, JDBC para SQL, H2 para o banco,
+  Bean Validation para validar entradas, Apache POI para gerar arquivos Excel
+  e JUnit/Spring Test para os testes.
+- Alterar dependencias ou versoes pode exigir baixar bibliotecas e rodar testes.
+
+README.md
+- Apresentacao do sistema, funcionalidades, tecnologias, como iniciar, testar,
+  organizacao, local do banco e limitacoes.
+
+GUIA_DO_SISTEMA.txt
+- Este documento: explicacao das funcoes, efeitos e responsabilidades dos
+  principais arquivos.
+
+Comandos simplificados.md
+- Atalhos e comandos para iniciar o sistema localmente ou na rede.
+
+iniciar-rede.cmd
+- Iniciador Windows localizado na pasta do projeto.
+- Verifica Java, JDK/Maven, define o IP configurado e inicia Spring Boot com o
+  perfil de rede local.
+
+iniciar-rede-local.ps1
+- Iniciador PowerShell alternativo para rede local. Recebe o endereco IPv4 do
+  computador e valida configuracoes antes de chamar o Maven.
+
+LEIA-ME-REDE-LOCAL.md
+- Instrucoes de uso do servidor na rede local, firewall, endereco IP, dados e
+  solucao de problemas de conexao.
+
+.gitignore
+- Define arquivos que nao devem ser incluidos no Git, como banco local e
+  resultados de compilacao.
+
+.gitattributes
+- Define regras de atributos e tratamento de arquivos pelo Git.
+
+data/
+- Pasta de dados locais persistentes.
+- data/orcafacil.mv.db e o arquivo principal do banco H2. Contem clientes,
+  orcamentos, itens, estados e imagens.
+- O tamanho aumenta conforme forem armazenados registros e imagens.
+- Para fazer copia de seguranca, pare o servidor e copie a pasta data para local
+  seguro. Nao substitua ou copie o banco enquanto a aplicacao estiver ligada.
+
+target/
+- Arquivos gerados pelo Maven durante compilacao e testes: classes .class,
+  recursos copiados, relatorios e JAR, quando empacotado.
+- Nao e o codigo-fonte principal e pode ser recriado com Maven.
+
+
+CODIGO JAVA: src/main/java/br/com/gustavo/orcafacil/
+
+OrcafacilApplication.java
+- Ponto de entrada da aplicacao Spring Boot. Inicializa servidor e componentes.
+
+controller/
+- Camada que recebe requisicoes HTTP e as conecta aos servicos.
+
+  QuoteController.java
+  - Endpoints REST de clientes e orcamentos: consultar, criar, editar e mudar
+    situacoes.
+  - Inclui rotas para status em lote e status de item.
+  - Encaminha as solicitacoes de exportacao para ExcelExportService.
+
+  ApiErrors.java
+  - Converte erros de validacao, formato, regras de negocio e integridade do
+    banco em respostas HTTP compreensiveis, como 400, 404 e 409.
+
+dto/
+- DTOs sao formatos de dados recebidos pela API. As anotacoes validam os campos
+  antes de o servico persistir as alteracoes.
+
+  CustomerInput.java
+  - Dados do cadastro de cliente; valida nome, e-mail, CNPJ e comprimentos.
+
+  QuoteInput.java
+  - Dados para criar/editar orcamento; valida cliente, titulo, data, desconto,
+    versao e lista de itens.
+
+  ItemInput.java
+  - Dados de cada item: descricao, quantidade, preco unitario e imagem.
+
+  StatusInput.java
+  - Situacao desejada para um orcamento e sua versao atual.
+
+  BulkStatusInput.java
+  - Situacao desejada e lista de IDs/versoes para operacao em lote.
+
+  QuoteVersionInput.java
+  - ID e versao de um orcamento dentro de uma solicitacao em lote.
+
+  ItemStatusInput.java
+  - Situacao desejada para um item e versao atual do orcamento associado.
+
+model/
+- Representacoes das entidades e estados utilizados pela aplicacao.
+
+  Customer.java
+  - Cliente e seus dados; displayName monta "Responsavel - Empresa" quando ha
+    responsavel preenchido.
+
+  Quote.java
+  - Orcamento, cliente, validade, descricao, situacao, itens e valores calculados.
+
+  QuoteItem.java
+  - Item do orcamento, incluindo imagem, quantidade, preco, situacao e subtotal.
+
+  Status.java
+  - Situacoes permitidas para o orcamento.
+
+  ItemStatus.java
+  - Situacoes permitidas para cada item.
+
+repository/
+- Camada que consulta e altera dados usando SQL e JdbcTemplate.
+
+  QuoteRepository.java
+  - Le/cria/atualiza clientes, orcamentos e itens.
+  - Persiste imagens, checa versoes e altera situacoes.
+  - Usa parametros SQL em vez de concatenar valores recebidos.
+
+service/
+- Camada das regras de negocio e operacoes transacionais.
+
+  QuoteService.java
+  - Valida e coordena criacao/edicao de clientes e orcamentos.
+  - Confere imagens, regras de transicao e versoes.
+  - Executa a mudanca de situacao em lote em transacao, evitando atualizacao
+    parcial quando algum orcamento nao pode ser alterado.
+
+  QuoteRules.java
+  - Calcula subtotal e total, arredonda valores e valida desconto e transicoes
+    permitidas para o orcamento.
+
+  ExcelExportService.java
+  - Monta arquivos .xlsx para orcamentos, clientes e producao.
+  - Cria abas, colunas, filtros e incorpora imagens quando o formato e suportado.
+
+  BusinessException.java
+  - Excecao de negocio com codigo HTTP e mensagem para erros esperados.
+
+
+RECURSOS: src/main/resources/
+
+application.properties
+- Configuracao normal: porta, endereco local, conexao do banco em arquivo,
+  inicializacao SQL e formato de erros.
+
+application-cloud.properties
+- Perfil de nuvem: escuta em 0.0.0.0, usa PORT ou 10000 e H2 em memoria.
+- Os dados desse perfil nao persistem apos encerrar o processo.
+
+application-lan.properties
+- Configuracao adicional do perfil lan, para acesso pela rede local. O IP pode
+  ser passado pelo iniciador. Desativa o console administrativo do H2.
+
+schema.sql
+- Cria tabelas, colunas, restricoes e indices do H2.
+- Tambem adiciona colunas novas a bases existentes usando alteracoes aditivas,
+  preservando os registros ja gravados.
+
+static/
+- Arquivos da interface servida diretamente pelo Spring Boot.
+
+  index.html
+  - Estrutura da pagina: abas, tabelas, formularios, janelas de dialogo e links
+    de exportacao.
+
+  app.js
+  - Comportamento da interface: carrega dados da API, busca, troca de abas,
+    abre formularios/detalhes, envia alteracoes, controla selecao multipla,
+    acoes individuais, itens de producao e downloads.
+
+  styles.css
+  - Aparencia visual, espacamentos, cores, responsividade para telas pequenas e
+    regras de impressao.
+
+
+TESTES: src/test/java/br/com/gustavo/orcafacil/
+
+ApiIntegrationTest.java
+- Inicia a aplicacao de teste com banco H2 em memoria e verifica chamadas HTTP,
+  validacoes, clientes, orcamentos, status e exportacoes Excel.
+- Nao deve alterar data/orcafacil.mv.db.
+
+QuoteRulesTest.java
+- Testa isoladamente calculos, arredondamentos, descontos e transicoes de
+  situacao do orcamento.
+
+
+DOCUMENTACAO: docs/
+
+API.md
+- Rotas REST e exemplos de requisicoes, status, exportacoes e erros.
+
+ARQUITETURA.md
+- Camadas da aplicacao, modelo de dados, estados e decisoes tecnicas.
+
+REQUISITOS.md
+- Requisitos funcionais, criterios de aceitacao e regras de negocio.
+
+PLANO.md
+- Planejamento inicial preservado e escopo implementado.
+
+GITHUB.md
+- Repositorio publicado e fluxo de manutencao por branches e pull requests.
+
+PIT.md
+- Contexto academico, objetivo e resultado tecnico do PIT II.
+
+FICHA_TESTE.md
+- Roteiro/ficha para avaliacao do sistema com usuario.
+
+VALIDACAO.md
+- Registro de testes feitos e limitacoes conhecidas.
+
+resultado-testes.json
+- Dados estruturados de um registro de testes/validacao.
+
+
+AUTOMACAO: .github/
+
+.github/workflows/ci.yml
+- Workflow de integracao continua que compila e testa o projeto em eventos do
+  repositorio, como push e pull request.
+
+.github/pull_request_template.md
+- Modelo de descricao para novas pull requests.
+
+
+4. COMO INICIAR E CONFERIR
+--------------------------
+
+Requisitos: JDK 17 ou superior e Maven instalado.
+
+Na pasta que contem pom.xml, execute:
+
+  mvn spring-boot:run
+
+No computador servidor, abra:
+
+  http://localhost:8080
+
+Para acesso por outros dispositivos na mesma rede, use o iniciador de rede e o
+IPv4 atual do computador servidor. O iniciar-rede.cmd contem o IP fixo abaixo;
+o iniciar-rede-local.ps1 permite informar outro IP com o parametro -Endereco.
+Exemplo de endereco de acesso:
+
+  http://192.168.15.24:8080
+
+Mantenha o terminal do servidor aberto durante o uso. A aplicacao nao inicia
+automaticamente ao abrir o navegador.
+
+Para testar alteracoes no codigo:
+
+  mvn test
+
+Para parar a aplicacao, pressione Ctrl+C no terminal que esta executando o
+Spring Boot.
+
+
+5. OBSERVACOES IMPORTANTES
+--------------------------
+
+- A aplicacao nao envia e-mails, nao gera PDF no servidor e nao controla estoque.
+- O botao de PDF usa a funcao de impressao/salvamento do navegador.
+- A aplicacao nao tem autenticacao: pessoas com acesso a rede e ao endereco
+  podem consultar e alterar os registros.
+- A validade nao muda automaticamente a situacao do orcamento.
+- Os testes usam banco em memoria e nao devem apagar os dados locais.
+- Ao modificar o schema ou atualizar o sistema, mantenha uma copia de seguranca
+  de data/orcafacil.mv.db, com o servidor parado.
+
+Fim do guia.
